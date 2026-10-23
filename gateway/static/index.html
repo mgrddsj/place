@@ -16,7 +16,7 @@
 			var selectedColor = {r: 0, g: 0, b: 0};
 			var selectedX = -1;
 			var selectedY = -1;
-			var cooldownTime = 30000; // 30s (fallback, server is source of truth)
+			var cooldownTime = 5000; // 30s (fallback, server is source of truth)
 			var nextAvailableTime = 0;
 			var timerInterval;
 			var clientId;
@@ -139,12 +139,7 @@
 				};
 			}
 
-			$(function(){
-				// Initialize client ID
-				clientId = getOrCreateClientId();
-				console.log("Client ID:", clientId);
-
-				// Load initial canvas state from PNG
+			function loadCanvas() {
 				var canvasImg = new Image();
 				canvasImg.crossOrigin = 'anonymous';
 				canvasImg.onload = function() {
@@ -156,22 +151,29 @@
 					console.log("Failed to load place.png, starting with blank canvas");
 				};
 				canvasImg.src = '/place.png?' + Date.now(); // To prevent caching
+			}
 
-				// socket = new WebSocket("ws://cslinux.utm.utoronto.ca:8001");
-				// socket = new WebSocket("ws://localhost:8001");
-				// socket = new WebSocket("ws://"+window.location.hostname+":8081");
-				socket = new WebSocket("wss://0g7tn9o5f4.execute-api.us-east-2.amazonaws.com/production/");
-				socket.onopen = function (event) {
-					console.log("connected");
-					// Check rate limit status
+			var reconnectDelayMs = 500;
+
+			function connect() {
+				var scheme = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+				socket = new WebSocket(scheme + window.location.host + '/ws');
+
+				socket.onopen = function () {
+					console.log("connected to " + socket.url);
+					reconnectDelayMs = 500;
+					loadCanvas();          // resync: replay missed pixels from the PNG
 					updateCooldownTime();
 				};
-				socket.onclose = function (event) {
-					// alert("closed code:" + event.code + " reason:" +event.reason + " wasClean:"+event.wasClean);
-					console.log("Connection closed");
+
+				socket.onclose = function () {
+					console.log("Connection closed; retrying in " + reconnectDelayMs + "ms");
+					setTimeout(connect, reconnectDelayMs);
+					reconnectDelayMs = Math.min(reconnectDelayMs * 2, 10000);
 				};
+
 				socket.onmessage = function (event) {
-					var o=JSON.parse(event.data);
+					var o = JSON.parse(event.data);
 
 					// Handle rate limit response
 					if (o.type === 'rateLimit') {
@@ -211,6 +213,17 @@
 						return;
 					}
 
+					// Any other server-side rejection (invalid pixel, bad frame, ...)
+					if (o.type === 'error') {
+						console.log("Server error: " + o.error);
+						return;
+					}
+
+					if (o.type === 'history') {
+						console.log("History events: " + o.events.length);
+						return;
+					}
+
 					// Handle drawing data
 					if (o.x !== undefined && o.y !== undefined) {
 						var context = document.getElementById('canvas').getContext('2d');
@@ -218,6 +231,13 @@
 						context.fillRect(o.x, o.y, 1, 1);
 					}
 				}
+			}
+
+			$(function(){
+				// Initialize client ID
+				clientId = getOrCreateClientId();
+				console.log("Client ID:", clientId);
+
 
 				// Initialize Palette
 				var $paletteContainer = $('#palette');
@@ -317,6 +337,7 @@
 				$(window).resize(function() {
 					updateCursor();
 				});
+				connect();
 			});
 		</script>
 		<style>

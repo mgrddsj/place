@@ -62,6 +62,7 @@ def test_redis_store_against_live_valkey():
 
     cooldown, clients, history, events = asyncio.run(scenario())
     assert cooldown == 999
-    assert clients == ["conn_1"]
-    assert history == ['{"x":1}']
+    # The live instance is shared: other clients and draws may already exist.
+    assert "conn_1" in clients
+    assert history[-1] == '{"x":1}'
     assert events and events[0][1]["x"] == "1"

@@ -6,17 +6,82 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-app-env: &app-env
+  REDIS_URL: redis://redis:6379/0
+  DATA_DIR: /data
+  IMAGE_SIZE: ${IMAGE_SIZE:-250}
+  RATE_LIMIT_SECONDS: ${RATE_LIMIT_SECONDS:-5}
+  ADMIN_CLIENT_IDS: ${ADMIN_CLIENT_IDS:-}
+  EVENTS_STREAM: place:events
+  CONSUMER_GROUP: png-writer
+
 services:
   redis:
     image: valkey/valkey:8-alpine
     command: ["valkey-server", "--appendonly", "yes", "--dir", "/data", "--save", ""]
-    user: "${PLACE_UID:-1000}:${PLACE_GID:-1000}"
+    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
     volumes:
       - ${PLACE_DATA_DIR:-./data}/redis:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    networks: [place]
+
+  api:
+    image: place-api:local
+    build:
+      context: ./api
+    environment: *app-env
+    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
+    volumes:
+      - ${PLACE_DATA_DIR:-./data}/place:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+    networks: [place]
+
+  worker:
+    image: place-api:local
+    build:
+      context: ./api
+    command: ["python", "-m", "place.worker"]
+    environment: *app-env
+    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
+    volumes:
+      - ${PLACE_DATA_DIR:-./data}/place:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    networks: [place]
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "${PLACE_BIND:-0.0.0.0}:${PLACE_PORT:-8090}:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./gateway/static:/usr/share/nginx/html:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
       retries: 5
     restart: unless-stopped
     logging: *default-logging
