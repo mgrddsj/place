@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en"> 
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+                <meta http-equiv="Pragma" content="no-cache" />
+                <meta http-equiv="Expires" content="0" />
+
+		<title>r/place clone</title>
+
+		<script src="jquery-3.7.1.min.js"></script>
+		<script type="text/javascript">
+	
+			var socket;
+			var selectedColor = {r: 0, g: 0, b: 0};
+			var selectedX = -1;
+			var selectedY = -1;
+			var cooldownTime = 30000; // 30s (fallback, server is source of truth)
+			var nextAvailableTime = 0;
+			var timerInterval;
+			var clientId;
+			var brushMode = false;
+			var isDrawing = false;
+			var lastBrushSendTime = 0;
+			var brushThrottleMs = 100;
+
+			// Basic palette colors
+			var palette = [
+				{r: 0, g: 0, b: 0},       // Black
+				{r: 255, g: 255, b: 255}, // White
+				{r: 170, g: 170, b: 170}, // Light Grey
+				{r: 85, g: 85, b: 85},    // Dark Grey
+				{r: 255, g: 0, b: 0},     // Red
+				{r: 255, g: 165, b: 0},   // Orange
+				{r: 255, g: 255, b: 0},   // Yellow
+				{r: 0, g: 255, b: 0},     // Green
+				{r: 0, g: 0, b: 255},     // Blue
+				{r: 128, g: 0, b: 128},   // Purple
+				{r: 255, g: 192, b: 203}, // Pink
+				{r: 139, g: 69, b: 19}    // Brown
+			];
+
+			function rgbToHex(r, g, b) {
+				return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+			}
+
+			function hexToRgb(hex) {
+				var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+				return result ? {
+					r: parseInt(result[1], 16),
+					g: parseInt(result[2], 16),
+					b: parseInt(result[3], 16)
+				} : null;
+			}
+
+			function generateClientId() {
+				return 'client_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
+			}
+
+			function getOrCreateClientId() {
+				var storedId = localStorage.getItem('placeClientId');
+				if (storedId) {
+					return storedId;
+				}
+				var newId = generateClientId();
+				localStorage.setItem('placeClientId', newId);
+				return newId;
+			}
+
+			function updateCursor() {
+				if (selectedX >= 0 && selectedY >= 0) {
+					var scale = $('#canvas').width() / 250;
+					$('#cursor').css({
+						display: 'block',
+						left: (selectedX * scale) + 'px',
+						top: (selectedY * scale) + 'px',
+						width: scale + 'px',
+						height: scale + 'px'
+					});
+					$('#coords').text(`(${selectedX}, ${selectedY})`);
+					$('#place-btn').prop('disabled', false);
+				} else {
+					$('#cursor').hide();
+					$('#coords').text('Select a pixel');
+					$('#place-btn').prop('disabled', true);
+				}
+				checkCooldown();
+			}
+
+			function checkCooldown() {
+				var now = Date.now();
+				if (now < nextAvailableTime) {
+					$('#place-btn').prop('disabled', true);
+					var remaining = Math.ceil((nextAvailableTime - now) / 1000);
+					$('#timer').text(`Wait ${remaining}s`);
+				} else {
+					$('#timer').text('Ready');
+					if (selectedX >= 0 && selectedY >= 0) {
+						$('#place-btn').prop('disabled', false);
+					}
+				}
+			}
+
+			function updateCooldownTime() {
+				// Gets the cooldown time from the server
+				var rateCheck = {'action':'checkRateLimit', 'clientId': clientId};
+				socket.send(JSON.stringify(rateCheck));
+			}
+
+			function sendPixel(x, y) {
+				var now = Date.now();
+				if (now - lastBrushSendTime < brushThrottleMs) {
+					return false; // Throttled
+				}
+				lastBrushSendTime = now;
+				var o = {
+					'action': 'draw',
+					'clientId': clientId,
+					'x': x,
+					'y': y,
+					'r': selectedColor.r,
+					'g': selectedColor.g,
+					'b': selectedColor.b
+				};
+				socket.send(JSON.stringify(o));
+				return true;
+			}
+
+			function getCanvasCoords(e, wrapper) {
+				var offset = $(wrapper).offset();
+				var x = e.pageX - offset.left;
+				var y = e.pageY - offset.top;
+				var visualWidth = $(wrapper).width();
+				var scale = visualWidth / 250;
+				return {
+					x: Math.floor(x / scale),
+					y: Math.floor(y / scale)
+				};
+			}
+
+			$(function(){
+				// Initialize client ID
+				clientId = getOrCreateClientId();
+				console.log("Client ID:", clientId);
+
+				// Load initial canvas state from PNG
+				var canvasImg = new Image();
+				canvasImg.crossOrigin = 'anonymous';
+				canvasImg.onload = function() {
+					var context = document.getElementById('canvas').getContext('2d');
+					context.drawImage(canvasImg, 0, 0);
+					console.log("Canvas initialized from place.png");
+				};
+				canvasImg.onerror = function() {
+					console.log("Failed to load place.png, starting with blank canvas");
+				};
+				canvasImg.src = '/place.png?' + Date.now(); // To prevent caching
+
+				// socket = new WebSocket("ws://cslinux.utm.utoronto.ca:8001");
+				// socket = new WebSocket("ws://localhost:8001");
+				// socket = new WebSocket("ws://"+window.location.hostname+":8081");
+				socket = new WebSocket("wss://0g7tn9o5f4.execute-api.us-east-2.amazonaws.com/production/");
+				socket.onopen = function (event) {
+					console.log("connected");
+					// Check rate limit status
+					updateCooldownTime();
+				};
+				socket.onclose = function (event) {
+					// alert("closed code:" + event.code + " reason:" +event.reason + " wasClean:"+event.wasClean);
+					console.log("Connection closed");
+				};
+				socket.onmessage = function (event) {
+					var o=JSON.parse(event.data);
+
+					// Handle rate limit response
+					if (o.type === 'rateLimit') {
+						if (o.nextAvailableTime) {
+							nextAvailableTime = o.nextAvailableTime;
+							checkCooldown();
+							if (timerInterval) clearInterval(timerInterval);
+							timerInterval = setInterval(function() {
+								checkCooldown();
+								if (Date.now() >= nextAvailableTime) {
+									clearInterval(timerInterval);
+								}
+							}, 1000);
+						}
+						return;
+					}
+
+					// Handle rate limit error
+					if (o.type === 'error' && o.error === 'rate_limited') {
+						nextAvailableTime = o.nextAvailableTime;
+						checkCooldown();
+
+						// Disable brush mode if active
+						if (brushMode) {
+							brushMode = false;
+							$('#brush-mode-toggle').prop('checked', false);
+							updateCursor();
+						}
+
+						if (timerInterval) clearInterval(timerInterval);
+						timerInterval = setInterval(function() {
+							checkCooldown();
+							if (Date.now() >= nextAvailableTime) {
+								clearInterval(timerInterval);
+							}
+						}, 1000);
+						return;
+					}
+
+					// Handle drawing data
+					if (o.x !== undefined && o.y !== undefined) {
+						var context = document.getElementById('canvas').getContext('2d');
+						context.fillStyle = 'rgb('+o.r+','+o.g+','+o.b+')';
+						context.fillRect(o.x, o.y, 1, 1);
+					}
+				}
+
+				// Initialize Palette
+				var $paletteContainer = $('#palette');
+				palette.forEach(function(color, index) {
+					var $swatch = $('<div>')
+						.addClass('color-swatch')
+						.css('background-color', `rgb(${color.r},${color.g},${color.b})`)
+						.click(function() {
+							$('.color-swatch').removeClass('selected');
+							$(this).addClass('selected');
+							selectedColor = color;
+							$('#custom-color').val(rgbToHex(color.r, color.g, color.b));
+						});
+					if (index === 0) $swatch.click(); // Select first by default
+					$paletteContainer.append($swatch);
+				});
+
+				// Custom Color Picker
+				$('#custom-color').on('input', function() {
+					var hex = $(this).val();
+					var rgb = hexToRgb(hex);
+					if (rgb) {
+						selectedColor = rgb;
+						$('.color-swatch').removeClass('selected');
+					}
+				});
+
+				// Canvas Interaction
+				$('#canvas-wrapper').on('mousedown', function(e) {
+					var coords = getCanvasCoords(e, this);
+					if (coords.x >= 0 && coords.x < 250 && coords.y >= 0 && coords.y < 250) {
+						if (brushMode) {
+							isDrawing = true;
+							sendPixel(coords.x, coords.y);
+						} else {
+							selectedX = coords.x;
+							selectedY = coords.y;
+							updateCursor();
+						}
+					}
+				});
+
+				$('#canvas-wrapper').on('mousemove', function(e) {
+					if (brushMode && isDrawing) {
+						var coords = getCanvasCoords(e, this);
+						if (coords.x >= 0 && coords.x < 250 && coords.y >= 0 && coords.y < 250) {
+							sendPixel(coords.x, coords.y);
+						}
+					}
+				});
+
+				$(document).on('mouseup', function() {
+					isDrawing = false;
+				});
+
+				// Brush mode toggle
+				$('#brush-mode-toggle').change(function() {
+					brushMode = $(this).is(':checked');
+					if (brushMode) {
+						$('#cursor').hide();
+						selectedX = -1;
+						selectedY = -1;
+						$('#coords').text('Brush mode');
+						$('#place-btn').prop('disabled', true);
+						$('#timer').text('Admin');
+					} else {
+						updateCursor();
+						checkCooldown();
+					}
+				});
+
+				// Place Button
+				$('#place-btn').click(function() {
+					if (selectedX >= 0 && selectedY >= 0) {
+						sendPixel(selectedX, selectedY);
+						
+						// Optimistically start cooldown (server will confirm/correct)
+						nextAvailableTime = Date.now() + cooldownTime;
+						checkCooldown();
+						
+						if (timerInterval) clearInterval(timerInterval);
+						timerInterval = setInterval(function() {
+							checkCooldown();
+							if (Date.now() >= nextAvailableTime) {
+								clearInterval(timerInterval);
+							}
+						}, 1000);
+
+						// Reset selection
+						selectedX = -1;
+						selectedY = -1;
+						updateCursor();
+					}
+				});
+
+				// Handle window resize to update cursor position
+				$(window).resize(function() {
+					updateCursor();
+				});
+			});
+		</script>
+		<style>
+			body {
+					display: flex;
+					flex-direction: column;
+					align-items: center;
+					justify-content: center;
+					height: 100vh;
+					overflow: hidden;
+					box-sizing: border-box;
+					background: #f0f0f0;
+			}
+
+			#root-container {
+					display: flex;
+					gap: 20px;
+					background: white;
+					padding: 20px;
+					align-items: flex-start;
+					max-height: 100%;
+			}
+
+			#canvas-wrapper {
+					position: relative;
+					border: 2px solid #333;
+					line-height: 0;
+					cursor: crosshair;
+					height: 80vh;
+					width: 80vh;
+			}
+
+			canvas {
+					image-rendering: pixelated;
+					width: 100%;
+					height: 100%;
+			}
+
+			#cursor {
+					position: absolute;
+					border: 2px solid red;
+					box-sizing: border-box;
+					pointer-events: none;
+					display: none;
+					z-index: 10;
+					animation: phase-cursor 1s ease-in-out infinite;
+			}
+
+			@keyframes phase-cursor {
+					0% { opacity: 0; }
+					50% { opacity: 1; }
+					100% { opacity: 0; }
+			}
+
+			#controls {
+					display: flex;
+					flex-direction: column;
+					gap: 20px;
+					width: 220px;
+			}
+
+			.control-group {
+					background: #f9f9f9;
+					padding: 15px;
+					border-radius: 6px;
+					border: 1px solid #eee;
+			}
+
+			.control-group h3 {
+					margin-top: 0;
+					margin-bottom: 10px;
+					font-size: 16px;
+					color: #555;
+			}
+
+			#palette {
+					display: grid;
+					grid-template-columns: repeat(4, 1fr);
+					gap: 8px;
+					margin-bottom: 10px;
+			}
+
+			.color-swatch {
+					width: 100%;
+					padding-bottom: 100%; /* Square aspect ratio */
+					border-radius: 4px;
+					cursor: pointer;
+					border: 2px solid #ddd;
+					transition: transform 0.1s;
+			}
+
+			.color-swatch:hover {
+					transform: scale(1.05);
+			}
+
+			.color-swatch.selected {
+					border-color: #333;
+					transform: scale(1.1);
+					box-shadow: 0 0 5px rgba(0,0,0,0.3);
+					z-index: 1;
+			}
+
+			#custom-color {
+					width: 100%;
+					height: 40px;
+					padding: 0;
+					border: none;
+					cursor: pointer;
+			}
+
+			#coords {
+					font-family: monospace;
+					font-size: 18px;
+					text-align: center;
+					font-weight: bold;
+			}
+
+			#place-btn {
+					width: 100%;
+					padding: 12px;
+					background-color: #007bff;
+					color: white;
+					border: none;
+					border-radius: 4px;
+					font-size: 16px;
+					font-weight: bold;
+					cursor: pointer;
+					transition: background-color 0.2s;
+			}
+
+			#place-btn:disabled {
+					background-color: #ccc;
+					cursor: not-allowed;
+			}
+
+			#place-btn:hover:not(:disabled) {
+					background-color: #0056b3;
+			}
+
+			#timer {
+					text-align: center;
+					margin-top: 10px;
+					font-weight: bold;
+			}
+
+			.admin-toggle {
+					display: flex;
+					align-items: center;
+					gap: 10px;
+					padding: 10px;
+					background: #fff3cd;
+					border: 1px solid #ffc107;
+					border-radius: 4px;
+					font-size: 14px;
+			}
+
+			.admin-toggle input[type="checkbox"] {
+					width: 18px;
+					height: 18px;
+					cursor: pointer;
+			}
+
+			.admin-toggle label {
+					cursor: pointer;
+					user-select: none;
+					color: #856404;
+					font-weight: 500;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>r/place clone</h1>
+
+                <div id="root-container">
+                        <div id="canvas-wrapper">
+                                <canvas id="canvas" width="250" height="250"></canvas>
+                                <div id="cursor"></div>
+                        </div>
+
+                        <div id="controls">
+                                <div class="control-group">
+                                        <h3>Coordinates</h3>
+                                        <div id="coords">Select a pixel</div>
+                                </div>
+
+                                <div class="control-group">
+                                        <h3>Color</h3>
+                                        <div id="palette"></div>
+                                        <input type="color" id="custom-color" value="#000000">
+                                </div>
+
+                                <div class="control-group">
+                                        <button id="place-btn" disabled>Place Pixel</button>
+                                        <div id="timer">Ready</div>
+                                </div>
+
+                                <div class="control-group admin-toggle">
+                                        <input type="checkbox" id="brush-mode-toggle">
+                                        <label for="brush-mode-toggle">Brush Mode (Admin)</label>
+                                </div>
+                        </div>
+                </div>
+	</body>
+</html>
+
