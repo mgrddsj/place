@@ -1,0 +1,26 @@
+name: place
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  redis:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes", "--dir", "/data", "--save", ""]
+    user: "${PLACE_UID:-1000}:${PLACE_GID:-1000}"
+    volumes:
+      - ${PLACE_DATA_DIR:-./data}/redis:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    networks: [place]
+
+networks:
+  place:
