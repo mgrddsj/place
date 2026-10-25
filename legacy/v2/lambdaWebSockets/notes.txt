@@ -1,0 +1,16 @@
+There is a lot to setup here to make this work
+
+1) apigateway with a websocket, you need the URL of the websocket server (put this in echo.html and scribble.html)
+2) Lambdas as outlined here
+3) The apigateway can be the triggers for the lambdas as appropriate. Configure the appropriate
+   methods for each of 
+	Connect.py     Method: $connect
+	Disconnect.py  Method: $disconnect
+	SendMessage.py Method: sendMessage
+
+	Broadcast.py   Exercise: You will need to figure this out below.
+
+4) Put the URL of the websocket server in echo.html and scribble.html
+5) You can just load these into firefox, or figure out how to serve echo.html and scribble.html from AWS
+6) Exercise: Figure out how to make Broadcast.py work, note the message we send to the web socket
+   from echo.html and scribble.html and also the fact that SendMessage.py gets called. 

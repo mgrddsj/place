@@ -1,8 +1,10 @@
 # Place v3
 
-Please see `architecture.png` for the architecture diagram of this version.
+> **Historical.** This deployment has been retired and `place.jessexu.me` now serves the
+> container-based version in the repository root. The steps below are kept as a record of how
+> the serverless stack was put together.
 
-Deployed version is available at: https://place.jessexu.me
+Please see `architecture.png` for the architecture diagram of this version.
 
 ## File Structure
 - `static_files/` - Frontend static files (HTML, CSS, JS)
@@ -145,11 +147,3 @@ Some resources we consulted while building this project:
 - https://repost.aws/knowledge-center/api-gateway-vpc-connections
 - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/apigatewaymanagementapi/client/post_to_connection.html
 - https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html 
-
-## Provenance
-
-This directory preserves the original AWS implementation (course project A3, group 68:
-Jesse Xu, Ziao Liu, Leon Liang) exactly as submitted, for reference. The code under
-`api/`, `gateway/` and the `worker` service in the repository root is the self-hosted
-revival.
-

@@ -1,0 +1,62 @@
+Elasticache: Valkey
+cloudfront
+lambdas
+APIGateway
+keyspaces
+SQS Logging
+
+boto3:
+	https://boto3.amazonaws.com/v1/documentation/api/latest/index.html
+	https://stackoverflow.com/questions/42809096/difference-in-boto3-between-resource-client-and-session
+	https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/index.html
+
+
+2 Availability Zones: 
+	https://aws.amazon.com/blogs/startups/how-to-get-high-availability-in-architecture/
+	https://medium.com/@christopheradamson253/high-availability-design-patterns-in-aws-e0d89db151e7
+	https://www.reddit.com/r/aws/comments/1976hyr/availability_zones_questions/
+EC2
+	https://docs.aws.amazon.com/elasticloadbalancing/latest/network/availability-zones.html
+	https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-subnets.html
+	https://docs.aws.amazon.com/lambda/latest/dg/security-resilience.html
+
+VPC
+	https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html
+	https://docs.aws.amazon.com/vpc/latest/userguide/what-is-amazon-vpc.html
+	AWS Management Console — Provides a web interface that you can use to access your VPCs.
+
+Multi Region
+	https://dev.to/awscloudclubs/vpc-peering-across-two-regions-3bdp
+
+ELB
+	https://docs.aws.amazon.com/elasticloadbalancing/latest/network/availability-zones.html
+	https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-subnets.html
+
+Lambda
+	https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html
+	https://stackoverflow.com/questions/41177965/the-provided-execution-role-does-not-have-permissions-to-call-describenetworkint
+	NOTE: Much easier if you create valkey cluster first and then create a function on the VPC associated
+	with the vlakey cluster
+
+	https://dev.to/giftcup/how-to-setup-an-aws-lambda-function-with-python-and-connect-with-an-amazon-rds-database-2gbf
+
+	If you want a lambda to return an image...
+	https://docs.aws.amazon.com/apigateway/latest/developerguide/lambda-proxy-binary-media.html
+
+ValKey (instead of Redis)
+	Check that this is multi availability zone 
+	https://dev.to/giftcup/how-to-setup-an-aws-lambda-function-with-python-and-connect-with-an-amazon-rds-database-2gbf
+	https://redis.io/docs/latest/develop/clients/redis-py/
+	https://dev.to/giftcup/how-to-connect-aws-lambda-to-an-amazon-elasticache-redis-cluster-5d9j
+	https://medium.com/@shahidahmed.org/using-aws-elasticache-in-python-apps-baf46a9435d
+
+RDS
+S3
+SQS
+ElastiCache
+Route53 health checks
+https://docs.aws.amazon.com/lambda/latest/dg/networking-vpc.html
+
+Javascript and PixelArrays
+	https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Pixel_manipulation_with_canvas
+	https://stackoverflow.com/questions/44860486/how-to-return-binary-data-from-lambda-function-in-aws-in-python

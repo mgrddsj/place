@@ -1,0 +1,22 @@
+# If you need to add some library to your lambda, you need to do 
+# some extra work. 
+# Here is how I added redis/valkey to my lambda. valkey is an open source dropin
+# replacement for redis, so you can use the redis-api.
+
+# Have to make sure that the lambda can access the VPC where valkey is.
+# https://dev.to/giftcup/how-to-setup-an-aws-lambda-function-with-python-and-connect-with-an-amazon-rds-database-2gbf
+# https://dev.to/giftcup/how-to-connect-aws-lambda-to-an-amazon-elasticache-redis-cluster-5d9j
+# Simplest to (1) Setup ValKey and then (2) Create the lambda on the VPC holding the ValKey cluster.
+
+mkdir lambdaValkey
+cd lambdaValkey/
+vim lambda_function.py # put your lambda here, you can edit it later in the console as well
+rm -fr deployment_package.zip
+rm -fr packages
+mkdir packages
+pip install --target ./packages redis
+cd packages/
+zip -r ../deployment_package.zip .
+cd ..
+zip deployment_package.zip lambda_function.py
+# Now upload this to your lambda

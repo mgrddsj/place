@@ -57,26 +57,45 @@ flowchart LR
 | `worker` | consumes the stream, applies pixels, writes the PNG | `data/place/place.png`, consumer group |
 | `redis` | Valkey with AOF on a bind mount | `data/redis/` |
 
+## How it got here
+
+```
+v1   two Node services in Docker on one EC2 instance
+v2   Lambda + managed Redis, hosted frontend, API Gateway WebSocket
+v3   API Gateway + four Lambdas + ElastiCache + SQS + S3/CloudFront
+v4   this: the same design in four containers on a pre-owned VPS
+```
+
+To save AWS costs, we migrated from v3 to this architecture on a pre-owned VPS. The core
+design and logic are preserved. The project has now moved twice across the hosting boundary:
+from a small self-managed Docker deployment, onto the cloud with serverless services, and
+back to a conventional container-based architecture. Each earlier version added one idea the
+current stack still relies on — a separate socket server, state that outlives the process,
+then queues and a durable image.
+
+The three earlier versions are kept in [`legacy/`](legacy/), with their original design notes
+and architecture diagrams.
+
 ## The original AWS version (v3)
 
-Version 3 was a fully serverless deployment, which is what the course assignment required.
+Version 3 was a fully serverless deployment.
 Browsers loaded the frontend and the current canvas PNG from CloudFront/S3 and held a
 WebSocket to API Gateway. Each frame became a Lambda invocation; the handler ran inside a
 VPC against ElastiCache for connections and history, and pushed work onto two SQS queues —
 one to a broadcaster Lambda that called `post_to_connection` for every live client, one to a
 PNG-writing Lambda that kept `place.png` in S3.
 
-![v3 AWS architecture](docs/legacy/architecture.v3.png)
+![v3 AWS architecture](legacy/v3/architecture.png)
 
 Services used: S3 + CloudFront (static files and the canvas PNG), API Gateway WebSocket API
 (routes `$connect`, `$disconnect`, `draw`, `getHistory`, `checkRateLimit`), four Lambdas
 (`webSocketV1`, `placeBroadcaster`, `savePlacePNG`, `ziao-sqs-logger`), ElastiCache Valkey,
 two SQS queues, a VPC with interface endpoints, IAM roles and CloudWatch logs.
 
-It was retired after the course finished: API Gateway, ElastiCache and a NAT gateway bill by
-the hour whether or not anyone is drawing, and the free trial had long expired. The revival
-keeps the data model, the Redis key names and the wire protocol, and replaces each managed
-service with a container.
+It was retired when the cost stopped making sense: API Gateway, ElastiCache and a NAT gateway
+bill by the hour whether or not anyone is drawing, and the trial credits had expired. The
+current version keeps the data model, the Redis key names and the wire protocol, and replaces
+each managed service with a container.
 
 ## How the AWS design maps onto containers
 
@@ -119,12 +138,14 @@ api/            FastAPI app, the PNG worker, tests, smoke client
   place/        config, pixels, rate_limit, png_store, store, hub, app, worker
   tests/        37 tests (36 unit + 1 Redis integration)
 gateway/        nginx.conf + the v3 frontend, patched to same-origin
-docs/           architecture, deployment runbook, screenshot, legacy v3 sources
+docs/           architecture, deployment runbook, screenshot
+legacy/         v1, v2 and v3 sources with their notes and diagrams
 docker-compose.yml
 ```
 
-`docs/legacy/` keeps the original AWS lambdas, frontend and architecture diagram as
-submitted, for comparison — the revival reuses their names and logic deliberately.
+`legacy/` keeps the three earlier versions for reference. The revival reuses their names,
+key names and logic deliberately, so the AWS lambdas and `api/place/` can be read side by
+side.
 
 ## Tests
 
