@@ -126,6 +126,11 @@ reachable — the single public entry point is nginx on 80/443.
   containers as root to "fix" it.
 - **502 from the gateway on first boot** — the `api` healthcheck has not passed yet; the
   gateway waits on `service_healthy`, so this normally only appears if `api` is crashing.
+- **502 right after rebuilding `api`** — nginx used to cache the old container IP, so a
+  recreated `api` left it pointing at a dead address. `gateway/nginx.conf` now declares
+  `resolver 127.0.0.11 valid=10s` plus `server api:8000 resolve` inside an `upstream`, so it
+  re-resolves within 10 s and `docker compose up -d --build` alone is enough. Keep both
+  directives together if you rename the upstream.
 - **`nginx -t` fails in a throwaway container** — nginx resolves `proxy_pass` upstreams at
   parse time and `api` only exists on the compose network. Use
   `docker compose exec -T gateway nginx -t`.

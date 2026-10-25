@@ -19,7 +19,7 @@ services:
   redis:
     image: valkey/valkey:8-alpine
     command: ["valkey-server", "--appendonly", "yes", "--dir", "/data", "--save", ""]
-    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
+    user: "${PLACE_UID:-1000}:${PLACE_GID:-1000}"
     volumes:
       - ${PLACE_DATA_DIR:-./data}/redis:/data
     healthcheck:
@@ -36,7 +36,7 @@ services:
     build:
       context: ./api
     environment: *app-env
-    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
+    user: "${PLACE_UID:-1000}:${PLACE_GID:-1000}"
     volumes:
       - ${PLACE_DATA_DIR:-./data}/place:/data
     depends_on:
@@ -58,7 +58,7 @@ services:
       context: ./api
     command: ["python", "-m", "place.worker"]
     environment: *app-env
-    user: "${PLACE_UID:-1001}:${PLACE_GID:-1001}"
+    user: "${PLACE_UID:-1000}:${PLACE_GID:-1000}"
     volumes:
       - ${PLACE_DATA_DIR:-./data}/place:/data
     depends_on:
