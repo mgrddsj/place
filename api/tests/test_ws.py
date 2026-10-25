@@ -60,3 +60,20 @@ def test_check_rate_limit_starts_at_zero(client):
     with client.websocket_connect("/ws") as websocket:
         websocket.send_json({"action": "checkRateLimit", "clientId": "client_e"})
         assert websocket.receive_json() == {"type": "rateLimit", "nextAvailableTime": 0}
+
+
+def test_stale_connection_ids_are_pruned_on_connect(store, client):
+    """A client that vanished without a clean close must not inflate the online count."""
+    import asyncio
+
+    asyncio.run(store.add_client("conn_ghost"))
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "checkRateLimit", "clientId": "probe"})
+        websocket.receive_json()
+        clients = asyncio.run(store.clients())
+        online = client.get("/healthz").json()["online"]
+
+    assert "conn_ghost" not in clients
+    assert len(clients) == 1
+    assert online == 1

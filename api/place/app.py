@@ -101,6 +101,17 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             "nextAvailableTime": decision.next_available_ms,
         }))
 
+    async def prune_stale_clients() -> None:
+        """Drop ids left behind by clients that vanished without a clean close.
+
+        The hub is authoritative: this process holds every live socket, so an id in the
+        store without a socket is stale. Safe only because `api` runs as one replica.
+        """
+        live = set(hub.ids())
+        for stored_id in await store.clients():
+            if stored_id not in live:
+                await store.remove_client(stored_id)
+
     @app.get("/healthz")
     async def healthz():
         redis_ok = await store.ping()
@@ -126,8 +137,10 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
         connection_id = f"conn_{uuid.uuid4().hex[:12]}"
-        await store.add_client(connection_id)
+        # Register locally first, so a concurrent connect cannot prune this id as stale.
         hub.add(connection_id, websocket)
+        await store.add_client(connection_id)
+        await prune_stale_clients()
         try:
             while True:
                 raw = await websocket.receive_text()
