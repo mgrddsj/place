@@ -70,37 +70,49 @@ docker image prune -f
 docker builder prune -f
 ```
 
-## Putting nginx + a domain in front (not done yet)
+## Production ingress (live)
 
-1. Add `/etc/nginx/sites-enabled/place.jessexu.me.conf`:
+`https://place.jessexu.me` → host nginx → `127.0.0.1:8090`. DNS is a CNAME to
+`cloud.jessexu.me`, which resolves to this host (no CDN in front, so the HTTP-01 challenge
+reaches nginx directly).
 
-   ```nginx
-   server {
-       server_name place.jessexu.me;
+The vhost is `/etc/nginx/sites-available/place.jessexu.me.conf` (symlinked into
+`sites-enabled`), shaped like the other `*.jessexu.me` files plus the WebSocket headers:
 
-       location / {
-           proxy_pass http://127.0.0.1:8090;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-           proxy_read_timeout 1h;
-           proxy_send_timeout 1h;
-           client_max_body_size 0;
-       }
-   }
-   ```
+```nginx
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        client_max_body_size 0;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+```
 
-2. `sudo nginx -t && sudo systemctl reload nginx`
-3. Repoint DNS: `place.jessexu.me` currently CNAMEs to the deleted CloudFront distribution
-   (`dc v1axi90f6a6.cloudfront.net`). Replace it with an A record to the instance's public
-   IP (Cloudflare proxying is fine; WebSockets are on by default).
-4. Then set `PLACE_BIND=127.0.0.1` in `.env` and `docker compose up -d`, so the raw port is
-   no longer public.
-5. An OCI VCN ingress rule for TCP 8090 is only needed for direct
-   `http://<public-ip>:8090` access before step 3. Without it, test through an SSH tunnel:
+TLS was added in place by certbot, which also wrote the port-80 → 443 redirect block and
+the renewal timer:
+
+```bash
+sudo certbot --nginx -d place.jessexu.me --non-interactive --agree-tos --redirect
+sudo certbot renew --cert-name place.jessexu.me --dry-run   # simulated renewal: succeeded
+```
+
+The stack binds loopback only (`PLACE_BIND=127.0.0.1`), so `http://<public-ip>:8090` is not
+reachable — the single public entry point is nginx on 80/443.
+
+### Rebuilding this for another domain
+
+1. Point the DNS name at the host and drop the vhost into `sites-available`, then
+   `sudo ln -s ../sites-available/<name>.conf sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx`.
+2. Verify plain HTTP serves the app, then run the certbot command above with `-d <name>`.
+3. Set `PLACE_BIND=127.0.0.1` in `.env` and `docker compose up -d` so the raw port is no
+   longer public.
+4. Without a DNS name (or before OCI ingress allows 80/443), test through an SSH tunnel:
 
    ```bash
    ssh -N -L 8090:127.0.0.1:8090 Oracle_Cloud_ARM &

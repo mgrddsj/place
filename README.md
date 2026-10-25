@@ -4,8 +4,8 @@ A collaborative 250×250 pixel canvas — an r/place clone — that originally r
 serverless (API Gateway WebSocket, four Lambdas, ElastiCache, SQS, S3, CloudFront) and now
 runs as a four-container Docker Compose stack on a single small server.
 
-Live demo: <http://132.145.101.159:8090> (plain HTTP until it is put behind a reverse
-proxy).
+Live demo: <https://place.jessexu.me> (nginx on the host terminates TLS with a Let's Encrypt
+certificate; the stack itself only listens on `127.0.0.1:8090`).
 
 ![the app](docs/screenshot.png)
 
